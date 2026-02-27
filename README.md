@@ -2,7 +2,7 @@
 
 ***resize_image_keep_ratio.py***
 
-Resize a one or more images by specific percentage. Can also set the minimum dimension the resized image can reach.
+Resize one or more images by specific percentage. Can also set the minimum dimension the resized image can reach.
 
 Usage:
 
