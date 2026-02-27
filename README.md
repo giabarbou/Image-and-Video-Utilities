@@ -1,6 +1,6 @@
 # Image & Video Utilities
 
-***resize_image_keep_ratio.py***
+## resize_image_keep_ratio.py
 
 Resize one or more images by specific percentage. Can also set the minimum dimension the resized image can reach.
 
@@ -8,8 +8,8 @@ Usage:
 
 `` python resize_image_keep_ratio.py /path/to/input.jpg /path/to/output.jpg --percent 0.8 --min_dim 480 ``
 
+## record_screen.py
 
-***record_screen.py***
 A simple tool that records the entire or part of the screen. Can set resolution and fps.
 
 Usage:
