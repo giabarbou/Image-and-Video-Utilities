@@ -16,6 +16,7 @@ def parse_arguments():
     parser.add_argument('--resolution', '-r', required=True, help='Output resolution (e.g., 1280x720)')
     parser.add_argument('--fps', '-f', type=int, required=True, help='Frames per second')
     parser.add_argument('--output', '-o', required=True, help='Output file path')
+    parser.add_argument('--audio-device', '-a', help='Audio device name (e.g., "microphone" or "stereo mix")')
     
     return parser.parse_args()
 
@@ -107,57 +108,75 @@ def select_area():
     
     return area_selected
 
-
-def start_recording(area, resolution, fps, output_path):
+def get_command_win(area, fps, audio_device=None):
     
-    global ffmpeg_process
-    
-    # Parse resolution
-    out_width, out_height = map(int, resolution.split('x'))
-    
-    # Windows command
     cmd = [
-        'ffmpeg',
-        '-y',
-        '-f', 'gdigrab',
-        '-framerate', str(fps),
-        '-offset_x', str(area['x']),
-        '-offset_y', str(area['y']),
+        'ffmpeg', '-y',
+        '-thread_queue_size', '1024',
+        '-f', 'gdigrab', '-framerate', str(fps),
+        '-offset_x', str(area['x']), '-offset_y', str(area['y']),
         '-video_size', f"{area['width']}x{area['height']}",
-        '-i', 'desktop',
-        '-vf', f'scale={out_width}:{out_height}',
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-crf', '23',
-        '-pix_fmt', 'yuv420p',
-        output_path
+        '-i', 'desktop'
     ]
+
+    if audio_device:
+        cmd += ['-thread_queue_size', '1024', '-f', 'dshow', '-i', f'audio={audio_device}']
+        cmd += ['-map', '0:v:0', '-map', '1:a:0']
+    else:
+        cmd += ['-map', '0:v:0']
+
+    return cmd
+
+def get_command_linux(area, fps, audio_device):
+    cmd = [
+        '-f', 'x11grab',
+        '-framerate', str(fps),
+        '-video_size', f"{area['width']}x{area['height']}",
+        '-i', f":0.0+{area['x']},{area['y']}" # Format is :display+x,y
+    ]
+    if audio_device:
+        # Linux usually uses ALSA or PulseAudio
+        cmd += ['-thread_queue_size', '1024', '-f', 'alsa', '-i', audio_device]
+        cmd += ['-map', '0:v:0', '-map', '1:a:0']
+    else:
+        cmd += ['-map', '0:v:0']
+
+
+def start_recording(area, resolution, fps, output_path, audio_device=None):
+    global ffmpeg_process
+    out_width, out_height = map(int, resolution.split('x'))
+    cmd = []
+
+    if sys.platform.startswith('win'):
+        cmd += get_command_win(area, fps, audio_device)
+    
+    elif sys.platform.startswith('linux'):
+        cmd += get_command_linux(area, fps, audio_device)
+
+    cmd += [
+        '-vf', f'scale={out_width}:{out_height}',
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+        '-pix_fmt', 'yuv420p'
+    ]
+
+    if audio_device:
+        cmd += ['-c:a', 'aac', '-b:a', '128k']
+    
+    cmd.append(output_path)
     
     print("\n" + "="*50)
     print("FFmpeg command:")
     print(' '.join(cmd))
     print("="*50 + "\n")
     
-    # Run FFmpeg in the same console
-    # Use CREATE_NO_WINDOW on Windows to avoid new window
-    if sys.platform == 'win32':
-        ffmpeg_process = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # Combine stdout and stderr
-            universal_newlines=True,    # Use text mode
-            bufsize=1                   # Line buffered
-        )
-    else:
-        ffmpeg_process = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=True,
-            bufsize=1
-        )
+    ffmpeg_process = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+        bufsize=1
+    )
     
     print(f"Recording started! Press Ctrl+C to stop...")
     print("FFmpeg output:\n")
@@ -221,18 +240,21 @@ def main():
         area=recording_area,
         resolution=args.resolution,
         fps=args.fps,
-        output_path=args.output
+        output_path=args.output,
+        audio_device=args.audio_device
     )
     
     # Keep script running
     try:
         while True:
             time.sleep(1)
+            
             # Check if FFmpeg died
             if ffmpeg_process and ffmpeg_process.poll() is not None:
+                
                 print("\nFFmpeg stopped unexpectedly!")
-                # Read any remaining output
-                remaining = ffmpeg_process.stdout.read()
+                
+                remaining = ffmpeg_process.stdout.read()  # Read any remaining output
                 if remaining:
                     print(remaining)
                 break
